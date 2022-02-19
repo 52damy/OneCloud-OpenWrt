@@ -1,0 +1,8 @@
+--- a/arch/arm/boot/dts/Makefile
++++ b/arch/arm/boot/dts/Makefile
+@@ -331,4 +331,5 @@ dtb-$(CONFIG_SOC_AT91SAM9) += \
+ 	meson8-minix-neo-x8.dtb \
+ 	meson8b-ec100.dtb \
++ 	onecloud.dtb \
+ 	meson8b-mxq.dtb \
+ 	meson8b-odroidc1.dtb \
