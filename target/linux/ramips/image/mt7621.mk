@@ -9,6 +9,22 @@ DEFAULT_SOC := mt7621
 KERNEL_DTB += -d21
 DEVICE_VARS += ELECOM_HWNAME LINKSYS_HWNAME
 
+ifdef CONFIG_LINUX_5_10
+  DTS_CPPFLAGS += -DDTS_LEGACY
+endif
+
+define Build/beeline-trx
+	echo -ne "hsqs" > $@.hsqs
+	$(STAGING_DIR_HOST)/bin/otrx create $@.trx -M 0x746f435d -f $@ \
+		-a 0x20000 -b 0x420000 -f $@.hsqs -a 1000
+	mv $@.trx $@
+	dd if=/dev/zero bs=1024 count=1 >> $@.tail
+	echo -ne "HDR0" | dd of=$@.tail bs=1 seek=$$((0x10c)) count=4 \
+		conv=notrunc 2>/dev/null
+	dd if=$@.tail >> $@ 2>/dev/null
+	rm $@.hsqs $@.tail
+endef
+
 define Build/gemtek-trailer
 	printf "%s%08X" ".GEMTEK." "$$(cksum $@ | cut -d ' ' -f1)" >> $@
 endef
@@ -26,7 +42,7 @@ define Build/iodata-factory
 		mv $(factory_bin).new $(factory_bin); \
 		$(CP) $(factory_bin) $(BIN_DIR)/; \
 	else \
-		echo "WARNING: initramfs kernel image too big, cannot generate factory image" >&2; \
+		echo "WARNING: initramfs kernel image too big, cannot generate factory image (actual $$(stat -c%s $@); max $(fw_size))" >&2; \
 	fi
 endef
 
@@ -66,7 +82,7 @@ define Build/ubnt-erx-factory-image
 		\
 		$(CP) $(1) $(BIN_DIR)/; \
 	else \
-		echo "WARNING: initramfs kernel image too big, cannot generate factory image" >&2; \
+		echo "WARNING: initramfs kernel image too big, cannot generate factory image (actual $$(stat -c%s $@); max $(KERNEL_SIZE))" >&2; \
 	fi
 endef
 
@@ -214,6 +230,28 @@ define Device/asus_rt-n56u-b1
 	kmod-usb-ledtrig-usbport
 endef
 TARGET_DEVICES += asus_rt-n56u-b1
+
+define Device/beeline_smartbox-flash
+  $(Device/dsa-migration)
+  $(Device/uimage-lzma-loader)
+  DEVICE_VENDOR := Beeline
+  DEVICE_MODEL := SmartBox Flash
+  IMAGE_SIZE := 32768k
+  KERNEL_SIZE := 4352k
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  KERNEL := kernel-bin | append-dtb | lzma | loader-kernel | \
+	uImage none | beeline-trx | pad-to $$(KERNEL_SIZE)
+  KERNEL_INITRAMFS := kernel-bin | append-dtb | lzma | loader-kernel | \
+	uImage none
+  IMAGES += factory.trx
+  IMAGE/factory.trx := append-kernel | append-ubi | check-size
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7615e kmod-mt7615-firmware \
+	uboot-envtools
+endef
+TARGET_DEVICES += beeline_smartbox-flash
 
 define Device/buffalo_wsr-1166dhp
   $(Device/dsa-migration)
@@ -375,6 +413,17 @@ define Device/dlink_dir-878-a1
 endef
 TARGET_DEVICES += dlink_dir-878-a1
 
+define Device/dlink_dir-878-r1
+  $(Device/dlink_dir-8xx-r1)
+  DEVICE_MODEL := DIR-878
+  DEVICE_VARIANT := R1
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-kernel | append-rootfs | check-size | \
+	sign-dlink-ru 57c5375741c30ca9ebcb36713db4ba51 \
+	ab0dff19af8842cdb70a86b4b68d23f7
+endef
+TARGET_DEVICES += dlink_dir-878-r1
+
 define Device/dlink_dir-882-a1
   $(Device/dlink_dir-8xx-a1)
   DEVICE_MODEL := DIR-882
@@ -394,6 +443,16 @@ define Device/dlink_dir-882-r1
 	ab0dff19af8842cdb70a86b4b68d23f7
 endef
 TARGET_DEVICES += dlink_dir-882-r1
+
+define Device/dual-q_h721
+  $(Device/dsa-migration)
+  $(Device/uimage-lzma-loader)
+  IMAGE_SIZE := 16064k
+  DEVICE_VENDOR := Dual-Q
+  DEVICE_MODEL := H721
+  DEVICE_PACKAGES := kmod-ata-ahci kmod-sdhci-mt7620 kmod-usb3 -wpad-basic-wolfssl
+endef
+TARGET_DEVICES += dual-q_h721
 
 define Device/d-team_newifi-d2
   $(Device/dsa-migration)
@@ -765,6 +824,16 @@ define Device/iodata_wnpr2600g
 endef
 TARGET_DEVICES += iodata_wnpr2600g
 
+define Device/iptime_a3002mesh
+  $(Device/dsa-migration)
+  IMAGE_SIZE := 16128k
+  UIMAGE_NAME := a3002me
+  DEVICE_VENDOR := ipTIME
+  DEVICE_MODEL := A3002MESH
+  DEVICE_PACKAGES := kmod-mt7615e kmod-mt7615-firmware
+endef
+TARGET_DEVICES += iptime_a3002mesh
+
 define Device/iptime_a3004ns-dual
   $(Device/dsa-migration)
   $(Device/uimage-lzma-loader)
@@ -800,7 +869,7 @@ define Device/iptime_a6004ns-m
   DEVICE_VENDOR := ipTIME
   DEVICE_MODEL := A6004NS-M
   DEVICE_PACKAGES := kmod-mt7615e kmod-mt7615-firmware kmod-usb3 \
-        kmod-usb-ledtrig-usbport
+	kmod-usb-ledtrig-usbport
 endef
 TARGET_DEVICES += iptime_a6004ns-m
 
@@ -952,11 +1021,11 @@ define Device/linksys_ea7xxx
 endef
 
 define Device/linksys_ea6350-v4
-	$(Device/linksys_ea7xxx)
-	DEVICE_MODEL := EA6350
-	DEVICE_VARIANT := v4
-	LINKSYS_HWNAME := EA6350
-	DEVICE_PACKAGES += kmod-mt7603 kmod-mt7663-firmware-ap
+  $(Device/linksys_ea7xxx)
+  DEVICE_MODEL := EA6350
+  DEVICE_VARIANT := v4
+  LINKSYS_HWNAME := EA6350
+  DEVICE_PACKAGES += kmod-mt7603 kmod-mt7663-firmware-ap
 endef
 TARGET_DEVICES += linksys_ea6350-v4
 
@@ -1349,6 +1418,17 @@ define Device/raisecom_msg1500-x-00
 endef
 TARGET_DEVICES += raisecom_msg1500-x-00
 
+define Device/renkforce_ws-wn530hp3-a
+  $(Device/dsa-migration)
+  DEVICE_VENDOR := Renkforce
+  DEVICE_MODEL := WS-WN530HP3-A
+  DEVICE_PACKAGES += kmod-mt7603 kmod-mt7615e kmod-mt7663-firmware-ap
+  IMAGE/sysupgrade.bin := append-kernel | pad-to 65536 | append-rootfs | \
+	check-size | append-metadata
+  IMAGE_SIZE := 15040k
+endef
+TARGET_DEVICES += renkforce_ws-wn530hp3-a
+
 define Device/samknows_whitebox-v8
   $(Device/dsa-migration)
   IMAGE_SIZE := 16064k
@@ -1489,6 +1569,19 @@ define Device/tplink_eap235-wall-v1
 endef
 TARGET_DEVICES += tplink_eap235-wall-v1
 
+define Device/tplink_eap615-wall-v1
+  $(Device/dsa-migration)
+  $(Device/tplink-safeloader)
+  DEVICE_MODEL := EAP615-Wall
+  DEVICE_VARIANT := v1
+  DEVICE_PACKAGES := kmod-mt7915e
+  TPLINK_BOARD_ID := EAP615-WALL-V1
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb | pad-to 64k
+  KERNEL_INITRAMFS := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd
+  IMAGE_SIZE := 13248k
+endef
+TARGET_DEVICES += tplink_eap615-wall-v1
+
 define Device/tplink_re350-v1
   $(Device/dsa-migration)
   $(Device/tplink-safeloader)
@@ -1523,6 +1616,17 @@ define Device/tplink_re650-v1
 endef
 TARGET_DEVICES += tplink_re650-v1
 
+define Device/tplink_tl-wpa8631p-v3
+  $(Device/dsa-migration)
+  $(Device/tplink-safeloader)
+  DEVICE_MODEL := TL-WPA8631P
+  DEVICE_VARIANT := v3
+  DEVICE_PACKAGES := kmod-mt7603 kmod-mt7615e kmod-mt7663-firmware-ap
+  TPLINK_BOARD_ID := TL-WPA8631P-V3
+  IMAGE_SIZE := 7232k
+endef
+TARGET_DEVICES += tplink_tl-wpa8631p-v3
+
 define Device/ubnt_edgerouter_common
   $(Device/dsa-migration)
   $(Device/uimage-lzma-loader)
@@ -1546,6 +1650,8 @@ TARGET_DEVICES += ubnt_edgerouter-x
 define Device/ubnt_edgerouter-x-sfp
   $(Device/ubnt_edgerouter_common)
   DEVICE_MODEL := EdgeRouter X SFP
+  DEVICE_ALT0_VENDOR := Ubiquiti
+  DEVICE_ALT0_MODEL := EdgePoint R6
   DEVICE_PACKAGES += kmod-i2c-algo-pca kmod-gpio-pca953x kmod-sfp
   SUPPORTED_DEVICES += ubnt-erx-sfp ubiquiti,edgerouterx-sfp
 endef
@@ -1863,6 +1969,18 @@ define Device/zbtlink_zbt-wg1602-16m
 	kmod-usb-ledtrig-usbport
 endef
 TARGET_DEVICES += zbtlink_zbt-wg1602-16m
+
+define Device/zbtlink_zbt-wg1608-16m
+  $(Device/dsa-migration)
+  $(Device/uimage-lzma-loader)
+  IMAGE_SIZE := 16064k
+  DEVICE_VENDOR := Zbtlink
+  DEVICE_MODEL := ZBT-WG1608
+  DEVICE_VARIANT := 16M
+  DEVICE_PACKAGES := kmod-sdhci-mt7620 kmod-mt7603 kmod-mt7615e \
+	kmod-mt7663-firmware-ap kmod-usb3 kmod-usb-ledtrig-usbport
+endef
+TARGET_DEVICES += zbtlink_zbt-wg1608-16m
 
 define Device/zbtlink_zbt-wg2626
   $(Device/dsa-migration)

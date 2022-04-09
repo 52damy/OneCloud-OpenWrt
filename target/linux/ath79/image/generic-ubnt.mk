@@ -246,6 +246,15 @@ define Device/ubnt_nanobeam-ac-gen2
 endef
 TARGET_DEVICES += ubnt_nanobeam-ac-gen2
 
+define Device/ubnt_nanobeam-ac-xc
+  $(Device/ubnt-xc)
+  SOC := qca9558
+  DEVICE_MODEL := NanoBeam AC
+  DEVICE_VARIANT := Gen1 (XC)
+  DEVICE_PACKAGES += kmod-ath10k-ct ath10k-firmware-qca988x-ct rssileds
+endef
+TARGET_DEVICES += ubnt_nanobeam-ac-xc
+
 define Device/ubnt_nanobridge-m
   $(Device/ubnt-xm)
   SOC := ar7241
@@ -410,7 +419,7 @@ TARGET_DEVICES += ubnt_routerstation-pro
 
 define Device/ubnt_unifi
   $(Device/ubnt-bz)
-  DEVICE_MODEL := UniFi
+  DEVICE_MODEL := UniFi AP
   SUPPORTED_DEVICES += unifi
 endef
 TARGET_DEVICES += ubnt_unifi
